@@ -1,589 +1,517 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Trophy, 
   RotateCcw, 
-  Info, 
-  Heart,
-  Diamond,
-  Club,
-  Spade,
-  Cat,
-  Mouse,
-  Utensils,
-  Pizza
+  Play, 
+  Clock, 
+  Zap, 
+  AlertCircle, 
+  ChevronLeft,
+  Info,
+  Flag,
+  Gauge,
+  Flame,
+  Wind
 } from 'lucide-react';
-import { Suit, Rank, CardData, GameStatus, GameState } from './types';
+import { 
+  GameMode, 
+  GameStatus, 
+  Block, 
+  GameState 
+} from './types';
+import { 
+  GRID_COLS, 
+  GRID_ROWS, 
+  INITIAL_ROWS, 
+  TIME_LIMIT, 
+  getRandomValue, 
+  getRandomColor 
+} from './constants';
 
-// --- Constants & Utilities ---
-
-const SUITS = [Suit.HEARTS, Suit.DIAMONDS, Suit.CLUBS, Suit.SPADES];
-const RANKS = [
-  Rank.ACE, Rank.TWO, Rank.THREE, Rank.FOUR, Rank.FIVE, 
-  Rank.SIX, Rank.SEVEN, Rank.EIGHT, Rank.NINE, Rank.TEN, 
-  Rank.JACK, Rank.QUEEN, Rank.KING
+// Racing themed colors
+const RACING_COLORS = [
+  'bg-red-600',    // Ferrari Red
+  'bg-slate-800',  // Carbon Fiber
+  'bg-amber-500',  // Desert Dust
+  'bg-blue-600',   // Racing Blue
+  'bg-emerald-600' // British Racing Green
 ];
-
-const createDeck = (): CardData[] => {
-  const deck: CardData[] = [];
-  SUITS.forEach(suit => {
-    RANKS.forEach(rank => {
-      deck.push({ id: `${rank}-${suit}`, suit, rank });
-    });
-  });
-  return shuffle(deck);
-};
-
-const shuffle = (deck: CardData[]): CardData[] => {
-  const newDeck = [...deck];
-  for (let i = newDeck.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [newDeck[i], newDeck[j]] = [newDeck[j], newDeck[i]];
-  }
-  return newDeck;
-};
-
-const getSuitIcon = (suit: Suit) => {
-  switch (suit) {
-    case Suit.HEARTS: return <Heart className="w-full h-full text-rose-500 fill-rose-500" />;
-    case Suit.DIAMONDS: return <Diamond className="w-full h-full text-orange-500 fill-orange-500" />;
-    case Suit.CLUBS: return <Club className="w-full h-full text-slate-700 fill-slate-700" />;
-    case Suit.SPADES: return <Spade className="w-full h-full text-slate-900 fill-slate-900" />;
-  }
-};
-
-const getSuitColor = (suit: Suit) => {
-  return (suit === Suit.HEARTS || suit === Suit.DIAMONDS) ? 'text-rose-600' : 'text-slate-900';
-};
 
 // --- Components ---
 
-const Card: React.FC<{
-  card: CardData;
-  isFaceDown?: boolean;
-  onClick?: () => void;
-  isPlayable?: boolean;
-  className?: string;
-  disableInitialAnimation?: boolean;
-  rotation?: number;
-  yOffset?: number;
-}> = ({ card, isFaceDown, onClick, isPlayable, className, disableInitialAnimation, rotation = 0, yOffset = 0 }) => {
+const NumberBlock: React.FC<{
+  block: Block;
+  isSelected: boolean;
+  onClick: () => void;
+  isGameOver: boolean;
+  isError: boolean;
+}> = ({ block, isSelected, onClick, isGameOver, isError }) => {
   return (
     <motion.div
-      layout={!disableInitialAnimation}
-      initial={disableInitialAnimation ? false : { scale: 0.8, opacity: 0, y: 50, rotate: rotation }}
+      layout
+      initial={{ scale: 0, opacity: 0 }}
       animate={{ 
         scale: 1, 
-        opacity: 1, 
-        y: yOffset, 
-        rotate: rotation,
-        transition: { type: 'spring', stiffness: 300, damping: 20 }
+        opacity: 1,
+        x: block.col * 100 + '%',
+        y: (GRID_ROWS - 1 - block.row) * 100 + '%',
+        rotate: isError ? [0, -5, 5, -5, 5, 0] : 0,
       }}
-      whileHover={isPlayable ? { y: yOffset - 30, scale: 1.15, rotate: 0, zIndex: 50 } : {}}
-      onClick={onClick}
-      className={`
-        relative w-16 h-24 sm:w-24 sm:h-36 rounded-xl shadow-lg border-4 
-        ${isFaceDown ? 'bg-amber-500 border-amber-700' : 'bg-white border-amber-100'}
-        ${isPlayable ? 'cursor-pointer ring-4 ring-yellow-400 ring-offset-4 z-10' : 'cursor-default'}
-        flex flex-col items-center justify-center select-none transition-shadow
-        ${className}
-      `}
+      exit={{ scale: 0, opacity: 0, rotate: 45 }}
+      transition={{ 
+        type: 'spring', 
+        stiffness: 300, 
+        damping: 25,
+        rotate: { duration: 0.4 }
+      }}
+      style={{ 
+        position: 'absolute', 
+        width: `${100 / GRID_COLS}%`, 
+        height: `${100 / GRID_ROWS}%`,
+        padding: '2px',
+      }}
     >
-      {isFaceDown ? (
-        <div className="w-full h-full flex items-center justify-center p-2">
-          <div className="w-full h-full border-4 border-white/30 rounded-lg flex items-center justify-center bg-amber-600/50">
-            <Mouse className="w-8 h-8 text-white/40" />
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className={`absolute top-1 left-1 sm:top-2 sm:left-2 flex flex-col items-center leading-none ${getSuitColor(card.suit)}`}>
-            <span className="text-base sm:text-2xl font-black italic">{card.rank}</span>
-            <div className="w-3 h-3 sm:w-5 sm:h-5">{getSuitIcon(card.suit)}</div>
-          </div>
-          <div className="w-8 h-8 sm:w-14 sm:h-14 opacity-10 scale-125">
-            {getSuitIcon(card.suit)}
-          </div>
-          <div className={`absolute bottom-1 right-1 sm:bottom-2 sm:right-2 flex flex-col items-center leading-none rotate-180 ${getSuitColor(card.suit)}`}>
-            <span className="text-base sm:text-2xl font-black italic">{card.rank}</span>
-            <div className="w-3 h-3 sm:w-5 sm:h-5">{getSuitIcon(card.suit)}</div>
-          </div>
-        </>
-      )}
+      <button
+        onClick={onClick}
+        disabled={isGameOver}
+        className={`
+          w-full h-full rounded-md flex items-center justify-center 
+          text-white font-black text-xl sm:text-2xl shadow-lg
+          transition-all duration-200 transform border-b-4 border-black/30
+          ${block.color}
+          ${isSelected ? 'ring-4 ring-yellow-400 scale-90 brightness-110 z-10 shadow-[0_0_20px_rgba(250,204,21,0.5)]' : 'hover:brightness-105'}
+          ${isGameOver ? 'grayscale opacity-50 cursor-not-allowed' : 'active:scale-95'}
+        `}
+      >
+        <span className="drop-shadow-[0_2px_2px_rgba(0,0,0,0.5)]">{block.value}</span>
+      </button>
     </motion.div>
   );
 };
 
 export default function App() {
-  const [gameState, setGameState] = useState<GameState | null>(null);
-  const [message, setMessage] = useState<string>("杰瑞鼠准备好了吗？开始大作战！");
-  
-  // Initialize Game
-  const initGame = useCallback((isNewGame = false) => {
-    const deck = createDeck();
-    const playerHand = deck.splice(0, 8);
-    const aiHand = deck.splice(0, 8);
-    
-    let firstDiscard = deck.pop()!;
-    while (firstDiscard.rank === Rank.EIGHT) {
-      deck.unshift(firstDiscard);
-      firstDiscard = deck.pop()!;
-    }
+  const [state, setState] = useState<GameState>({
+    grid: [],
+    target: 0,
+    selectedIds: [],
+    score: 0,
+    mode: 'classic',
+    status: 'menu',
+    timeLeft: TIME_LIMIT,
+    level: 1,
+  });
 
-    setGameState(prev => ({
-      deck,
-      playerHand,
-      aiHand,
-      discardPile: [firstDiscard],
-      currentTurn: 'player',
-      status: 'playing',
-      view: 'playing',
-      activeSuit: null,
-      isSuitSelecting: false,
-      scores: isNewGame ? { player: 0, ai: 0 } : (prev?.scores || { player: 0, ai: 0 }),
-    }));
-    setMessage("轮到你了，杰瑞！快出牌或者去厨房摸一张。");
+  const [isError, setIsError] = useState(false);
+  const [lastScoreGain, setLastScoreGain] = useState(0);
+  const [showScorePopup, setShowScorePopup] = useState(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // --- Logic ---
+
+  const generateTarget = useCallback((grid: Block[]) => {
+    if (grid.length === 0) return 10;
+    
+    // Pick 2-4 random blocks to sum up for a guaranteed solvable target
+    const count = Math.min(grid.length, Math.floor(Math.random() * 3) + 2);
+    const shuffled = [...grid].sort(() => 0.5 - Math.random());
+    const sum = shuffled.slice(0, count).reduce((acc, b) => acc + b.value, 0);
+    
+    // Ensure target is reasonable
+    return Math.max(5, Math.min(sum, 35));
   }, []);
 
-  // Show Menu initially
-  useEffect(() => {
-    setGameState({
-      deck: [],
-      playerHand: [],
-      aiHand: [],
-      discardPile: [],
-      currentTurn: 'player',
-      status: 'playing',
-      view: 'menu',
-      activeSuit: null,
-      isSuitSelecting: false,
-      scores: { player: 0, ai: 0 }
+  const addNewRow = useCallback(() => {
+    setState(prev => {
+      const isFull = prev.grid.some(b => b.row === GRID_ROWS - 1);
+      if (isFull) return { ...prev, status: 'gameover' };
+
+      const shiftedGrid = prev.grid.map(b => ({ ...b, row: b.row + 1 }));
+      const newRow: Block[] = Array.from({ length: GRID_COLS }).map((_, col) => ({
+        id: Math.random().toString(36).substr(2, 9),
+        value: getRandomValue(),
+        row: 0,
+        col,
+        color: RACING_COLORS[Math.floor(Math.random() * RACING_COLORS.length)],
+      }));
+
+      const nextGrid = [...shiftedGrid, ...newRow];
+      if (nextGrid.some(b => b.row >= GRID_ROWS)) {
+        return { ...prev, grid: nextGrid, status: 'gameover' };
+      }
+
+      return { 
+        ...prev, 
+        grid: nextGrid,
+        timeLeft: TIME_LIMIT 
+      };
     });
   }, []);
 
-  const topDiscard = gameState?.discardPile[gameState.discardPile.length - 1];
-  const currentSuit = gameState?.activeSuit || topDiscard?.suit;
+  const initGame = (mode: GameMode) => {
+    const initialGrid: Block[] = [];
+    for (let r = 0; r < INITIAL_ROWS; r++) {
+      for (let c = 0; c < GRID_COLS; c++) {
+        initialGrid.push({
+          id: Math.random().toString(36).substr(2, 9),
+          value: getRandomValue(),
+          row: r,
+          col: c,
+          color: RACING_COLORS[Math.floor(Math.random() * RACING_COLORS.length)],
+        });
+      }
+    }
 
-  const isCardPlayable = (card: CardData) => {
-    if (!gameState || gameState.status !== 'playing') return false;
-    if (card.rank === Rank.EIGHT) return true;
-    if (!topDiscard) return false;
-    
-    return card.suit === currentSuit || card.rank === topDiscard.rank;
+    setState({
+      grid: initialGrid,
+      target: generateTarget(initialGrid),
+      selectedIds: [],
+      score: 0,
+      mode,
+      status: 'playing',
+      timeLeft: TIME_LIMIT,
+      level: 1,
+    });
+    setIsError(false);
   };
 
-  const playCard = (card: CardData, isPlayer: boolean) => {
-    if (!gameState) return;
+  const handleBlockClick = (id: string) => {
+    if (state.status !== 'playing') return;
 
-    const newHand = isPlayer 
-      ? gameState.playerHand.filter(c => c.id !== card.id)
-      : gameState.aiHand.filter(c => c.id !== card.id);
+    setState(prev => {
+      const isSelected = prev.selectedIds.includes(id);
+      const newSelectedIds = isSelected
+        ? prev.selectedIds.filter(sid => sid !== id)
+        : [...prev.selectedIds, id];
 
-    const newDiscardPile = [...gameState.discardPile, card];
+      const currentSum = prev.grid
+        .filter(b => newSelectedIds.includes(b.id))
+        .reduce((acc, b) => acc + b.value, 0);
 
-    if (card.rank === Rank.EIGHT) {
-      if (isPlayer) {
-        setGameState(prev => prev ? ({
-          ...prev,
-          playerHand: newHand,
-          discardPile: newDiscardPile,
-          isSuitSelecting: true,
-          activeSuit: null,
-        }) : null);
-        setMessage("嘿！你打出了疯狂 8 点！快选个新口味！");
-      } else {
-        const suitCounts: Record<string, number> = {
-          [Suit.HEARTS]: 0, [Suit.DIAMONDS]: 0, [Suit.CLUBS]: 0, [Suit.SPADES]: 0
-        };
-        newHand.forEach(c => suitCounts[c.suit]++);
-        const bestSuit = Object.keys(suitCounts).reduce((a, b) => suitCounts[a] > suitCounts[b] ? a : b) as Suit;
+      if (currentSum === prev.target) {
+        // Success!
+        const remainingGrid = prev.grid.filter(b => !newSelectedIds.includes(b.id));
         
-        setGameState(prev => prev ? ({
-          ...prev,
-          aiHand: newHand,
-          discardPile: newDiscardPile,
-          activeSuit: bestSuit,
-          currentTurn: 'player'
-        }) : null);
-        setMessage(`汤姆猫打出了 8！他把花色改成了 ${bestSuit === Suit.HEARTS ? '红心' : bestSuit === Suit.DIAMONDS ? '方块' : bestSuit === Suit.CLUBS ? '梅花' : '黑桃'}。`);
-      }
-    } else {
-      const nextTurn = isPlayer ? 'ai' : 'player';
-      const status: GameStatus = newHand.length === 0 ? (isPlayer ? 'player_win' : 'ai_win') : 'playing';
+        // Multiplier based on number of blocks used
+        const multiplier = newSelectedIds.length >= 4 ? 2 : 1;
+        const gain = newSelectedIds.length * 10 * multiplier;
+        const newScore = prev.score + gain;
+        const newLevel = Math.floor(newScore / 1000) + 1;
 
-      setGameState(prev => {
-        if (!prev) return null;
-        const newScores = { ...prev.scores };
-        if (status === 'player_win') newScores.player++;
-        if (status === 'ai_win') newScores.ai++;
+        setLastScoreGain(gain);
+        setShowScorePopup(true);
+        setTimeout(() => setShowScorePopup(false), 1000);
+
+        const finalGrid: Block[] = [];
+        for (let c = 0; c < GRID_COLS; c++) {
+          const colBlocks = remainingGrid
+            .filter(b => b.col === c)
+            .sort((a, b) => a.row - b.row);
+          colBlocks.forEach((b, index) => {
+            finalGrid.push({ ...b, row: index });
+          });
+        }
+
+        if (prev.mode === 'classic') {
+          const isFull = finalGrid.some(b => b.row === GRID_ROWS - 1);
+          if (isFull) return { ...prev, grid: finalGrid, status: 'gameover', score: newScore };
+
+          const shiftedGrid = finalGrid.map(b => ({ ...b, row: b.row + 1 }));
+          const newRow: Block[] = Array.from({ length: GRID_COLS }).map((_, col) => ({
+            id: Math.random().toString(36).substr(2, 9),
+            value: getRandomValue(),
+            row: 0,
+            col,
+            color: RACING_COLORS[Math.floor(Math.random() * RACING_COLORS.length)],
+          }));
+
+          const nextGrid = [...shiftedGrid, ...newRow];
+          return {
+            ...prev,
+            grid: nextGrid,
+            selectedIds: [],
+            target: generateTarget(nextGrid),
+            score: newScore,
+            level: newLevel,
+          };
+        }
 
         return {
           ...prev,
-          playerHand: isPlayer ? newHand : prev.playerHand,
-          aiHand: isPlayer ? prev.aiHand : newHand,
-          discardPile: newDiscardPile,
-          currentTurn: nextTurn,
-          status,
-          activeSuit: null,
-          scores: newScores
+          grid: finalGrid,
+          selectedIds: [],
+          target: generateTarget(finalGrid),
+          score: newScore,
+          level: newLevel,
+          timeLeft: TIME_LIMIT,
         };
-      });
-
-      if (status === 'playing') {
-        setMessage(isPlayer ? "汤姆猫正在密谋..." : "轮到你了，杰瑞！");
-      } else {
-        setMessage(status === 'player_win' ? "太棒了！杰瑞鼠赢了！汤姆猫又搞砸了。" : "噢不！汤姆猫抓到了你。");
+      } else if (currentSum > prev.target) {
+        setIsError(true);
+        setTimeout(() => setIsError(false), 500);
+        return { ...prev, selectedIds: [] };
       }
-    }
+
+      return { ...prev, selectedIds: newSelectedIds };
+    });
   };
 
-  const drawCard = (isPlayer: boolean) => {
-    if (!gameState || gameState.status !== 'playing') return;
-    if (gameState.deck.length === 0) {
-      setMessage("厨房里没吃的了（摸牌堆空了）！");
-      setGameState(prev => prev ? ({ ...prev, currentTurn: isPlayer ? 'ai' : 'player' }) : null);
-      return;
-    }
-
-    const newDeck = [...gameState.deck];
-    const drawnCard = newDeck.pop()!;
-
-    if (isPlayer) {
-      setGameState(prev => prev ? ({
-        ...prev,
-        deck: newDeck,
-        playerHand: [...prev.playerHand, drawnCard],
-        currentTurn: 'ai'
-      }) : null);
-      setMessage(`你摸到了一张 ${drawnCard.rank}。`);
-    } else {
-      setGameState(prev => prev ? ({
-        ...prev,
-        deck: newDeck,
-        aiHand: [...prev.aiHand, drawnCard],
-        currentTurn: 'player'
-      }) : null);
-      setMessage("汤姆猫摸了一张牌。");
-    }
-  };
+  // --- Effects ---
 
   useEffect(() => {
-    if (gameState?.currentTurn === 'ai' && gameState.status === 'playing' && gameState.view === 'playing') {
-      const timer = setTimeout(() => {
-        const playableCards = gameState.aiHand.filter(isCardPlayable);
-        if (playableCards.length > 0) {
-          const normalPlayable = playableCards.filter(c => c.rank !== Rank.EIGHT);
-          const cardToPlay = normalPlayable.length > 0 
-            ? normalPlayable[Math.floor(Math.random() * normalPlayable.length)]
-            : playableCards[0];
-          playCard(cardToPlay, false);
-        } else {
-          drawCard(false);
-        }
-      }, 1500);
-      return () => clearTimeout(timer);
+    if (state.status === 'playing' && state.mode === 'time') {
+      timerRef.current = setInterval(() => {
+        setState(prev => {
+          if (prev.timeLeft <= 1) {
+            // Time's up: penalty
+            return { ...prev, timeLeft: TIME_LIMIT, selectedIds: [] };
+          }
+          return { ...prev, timeLeft: prev.timeLeft - 1 };
+        });
+      }, 1000);
+      return () => { if (timerRef.current) clearInterval(timerRef.current); };
     }
-  }, [gameState?.currentTurn, gameState?.status, gameState?.view]);
+  }, [state.status, state.mode]);
 
-  const selectSuit = (suit: Suit) => {
-    setGameState(prev => prev ? ({
-      ...prev,
-      activeSuit: suit,
-      isSuitSelecting: false,
-      currentTurn: 'ai'
-    }) : null);
-    setMessage(`你把花色改成了 ${suit === Suit.HEARTS ? '红心' : suit === Suit.DIAMONDS ? '方块' : suit === Suit.CLUBS ? '梅花' : '黑桃'}。汤姆猫在看你呢...`);
-  };
+  useEffect(() => {
+    if (state.status === 'playing' && state.mode === 'time' && state.timeLeft === TIME_LIMIT) {
+      addNewRow();
+    }
+  }, [state.timeLeft, state.mode, state.status, addNewRow]);
 
-  if (!gameState) return <div className="min-h-screen bg-orange-100 flex items-center justify-center text-orange-900">加载中...</div>;
+  const currentSum = state.grid
+    .filter(b => state.selectedIds.includes(b.id))
+    .reduce((acc, b) => acc + b.value, 0);
 
-  if (gameState.view === 'menu') {
+  if (state.status === 'menu') {
     return (
-      <div className="min-h-screen bg-[#fdf2e9] flex flex-col items-center justify-center p-4 relative overflow-hidden">
-        <div className="fixed inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#000 1px, transparent 0)', backgroundSize: '40px 40px' }} />
-        
+      <div className="min-h-screen bg-neutral-950 flex flex-col items-center justify-center p-6 text-white overflow-hidden relative">
+        {/* Racing Background Elements */}
+        <div className="absolute inset-0 opacity-30 pointer-events-none">
+          <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20" />
+          <div className="absolute top-1/2 left-0 w-full h-1 bg-yellow-500/50 -translate-y-1/2" />
+          <div className="absolute top-1/2 left-0 w-full h-24 bg-neutral-900/80 -translate-y-1/2 blur-xl" />
+        </div>
+
         <motion.div 
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className="relative z-10 text-center"
+          initial={{ x: -100, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          className="relative z-10 text-center mb-12"
         >
-          <div className="flex justify-center gap-4 mb-8">
-            <motion.div animate={{ y: [0, -20, 0] }} transition={{ repeat: Infinity, duration: 2 }} className="bg-white p-6 rounded-[2rem] border-8 border-slate-300 shadow-xl">
-              <Cat className="w-20 h-20 text-slate-600" />
-            </motion.div>
-            <motion.div animate={{ y: [0, -15, 0] }} transition={{ repeat: Infinity, duration: 2, delay: 0.5 }} className="bg-white p-6 rounded-[2rem] border-8 border-orange-500 shadow-xl">
-              <Mouse className="w-20 h-20 text-orange-500" />
-            </motion.div>
+          <div className="inline-flex p-4 bg-red-600 rounded-full shadow-[0_0_40px_rgba(220,38,38,0.5)] mb-6 -rotate-6 border-4 border-white">
+            <Flame className="w-16 h-16 text-yellow-400 animate-bounce" />
           </div>
-
-          <h1 className="text-6xl sm:text-8xl font-black text-orange-900 italic mb-4 tracking-tighter drop-shadow-lg">
-            猫鼠大作战
+          <h1 className="text-6xl sm:text-8xl font-black italic tracking-tighter mb-2 drop-shadow-[0_4px_0_#991b1b]">
+            飞驰人生
           </h1>
-          <p className="text-xl font-bold text-orange-600 mb-12 uppercase tracking-[0.2em]">Crazy Eights: Classic Edition</p>
-
-          <div className="flex flex-col gap-4 max-w-xs mx-auto">
-            <button
-              onClick={() => initGame(true)}
-              className="py-6 px-12 bg-orange-500 hover:bg-orange-600 text-white font-black rounded-[2rem] text-3xl shadow-xl border-b-8 border-orange-800 transition-all active:border-b-0 active:translate-y-2"
-            >
-              开始游戏
-            </button>
-            <div className="flex items-center gap-2 justify-center text-orange-400 font-bold mt-4">
-              <Info className="w-5 h-5" />
-              <span>数字 8 是万能牌！</span>
-            </div>
-          </div>
+          <p className="text-red-500 font-black uppercase tracking-[0.5em] text-sm">Bayanbulak Rally</p>
         </motion.div>
 
-        {/* Decorative elements */}
-        <div className="absolute -bottom-20 -left-20 w-64 h-64 bg-yellow-400 rounded-full blur-3xl opacity-20" />
-        <div className="absolute -top-20 -right-20 w-64 h-64 bg-orange-400 rounded-full blur-3xl opacity-20" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 w-full max-w-2xl relative z-10">
+          <motion.button
+            whileHover={{ scale: 1.05, rotate: -1 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => initGame('classic')}
+            className="group bg-neutral-900 border-4 border-neutral-800 p-8 rounded-xl hover:bg-red-700 hover:border-red-500 transition-all text-left relative overflow-hidden"
+          >
+            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-30 transition-opacity">
+              <Flag className="w-24 h-24 rotate-12" />
+            </div>
+            <div className="bg-red-600 w-12 h-12 rounded-lg flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-lg">
+              <Trophy className="w-6 h-6" />
+            </div>
+            <h2 className="text-2xl font-black mb-2 italic">巴音布鲁克拉力赛</h2>
+            <p className="text-neutral-400 text-sm group-hover:text-red-100">经典挑战：每一脚油门都是对极限的试探。</p>
+          </motion.button>
+
+          <motion.button
+            whileHover={{ scale: 1.05, rotate: 1 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => initGame('time')}
+            className="group bg-neutral-900 border-4 border-neutral-800 p-8 rounded-xl hover:bg-amber-600 hover:border-amber-400 transition-all text-left relative overflow-hidden"
+          >
+            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-30 transition-opacity">
+              <Gauge className="w-24 h-24 -rotate-12" />
+            </div>
+            <div className="bg-amber-500 w-12 h-12 rounded-lg flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-lg">
+              <Clock className="w-6 h-6" />
+            </div>
+            <h2 className="text-2xl font-black mb-2 italic">极速冲刺赛</h2>
+            <p className="text-neutral-400 text-sm group-hover:text-amber-100">计时挑战：在引擎过热前冲向终点。</p>
+          </motion.button>
+        </div>
+
+        <div className="mt-12 flex flex-col items-center gap-4 text-neutral-500">
+          <div className="flex items-center gap-2 font-black italic">
+            <Wind className="w-4 h-4" />
+            <span>“我不是想赢，我只是不想输。”</span>
+          </div>
+          <div className="flex gap-6 text-[10px] uppercase tracking-widest font-black">
+            <span className="flex items-center gap-1 text-red-500"><Flame className="w-3 h-3" /> 4+ 氮气加速</span>
+            <span className="flex items-center gap-1 text-amber-500"><Gauge className="w-3 h-3" /> 引擎过热警告</span>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#fdf2e9] text-slate-900 font-sans selection:bg-orange-200 overflow-hidden flex flex-col">
-      {/* Background Pattern */}
-      <div className="fixed inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#000 1px, transparent 0)', backgroundSize: '40px 40px' }} />
-
-      {/* Header */}
-      <header className="p-4 flex justify-between items-center bg-white border-b-8 border-orange-200 shadow-sm z-10">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-orange-500 rounded-2xl flex items-center justify-center text-white font-black text-2xl rotate-3 shadow-lg border-4 border-orange-700">8</div>
-          <div>
-            <h1 className="text-2xl font-black tracking-tight text-orange-900 italic">猫鼠大作战</h1>
-            <div className="flex gap-4 text-[10px] font-black uppercase tracking-widest text-orange-500">
-              <span>汤姆: {gameState.scores.ai}</span>
-              <span>杰瑞: {gameState.scores.player}</span>
-            </div>
-          </div>
-        </div>
+    <div className="min-h-screen bg-neutral-950 text-white flex flex-col overflow-hidden font-sans selection:bg-red-500">
+      <header className="p-4 sm:p-6 flex items-center justify-between bg-neutral-900 border-b-4 border-red-600 z-20 shadow-2xl">
         <div className="flex items-center gap-4">
           <button 
-            onClick={() => setGameState(prev => prev ? ({ ...prev, view: 'menu' }) : null)}
-            className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl transition-all border-4 border-slate-200 active:scale-95"
+            onClick={() => setState(prev => ({ ...prev, status: 'menu' }))}
+            className="p-2 hover:bg-white/10 rounded-lg transition-colors border border-white/10"
           >
-            <Utensils className="w-6 h-6" />
+            <ChevronLeft className="w-6 h-6" />
           </button>
+          <div>
+            <div className="text-[10px] uppercase font-black tracking-widest text-neutral-500">DISTANCE</div>
+            <div className="text-2xl font-black italic text-red-500">{state.score}m</div>
+          </div>
+        </div>
+
+        <div className="flex flex-col items-center">
+          <div className="text-[10px] uppercase font-black tracking-widest text-neutral-500 mb-1">RPM TARGET</div>
+          <motion.div 
+            key={state.target}
+            initial={{ x: 50, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            className="bg-neutral-800 text-red-500 px-8 py-2 rounded-lg font-black text-4xl italic border-2 border-red-600 shadow-[0_0_20px_rgba(220,38,38,0.3)]"
+          >
+            {state.target}
+          </motion.div>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <div className="text-right hidden sm:block">
+            <div className="text-[10px] uppercase font-black tracking-widest text-neutral-500">GEAR</div>
+            <div className="text-2xl font-black italic text-yellow-500">{state.level}</div>
+          </div>
           <button 
-            onClick={() => initGame()}
-            className="p-3 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-2xl transition-all border-4 border-orange-200 active:scale-95"
+            onClick={() => initGame(state.mode)}
+            className="p-3 bg-neutral-800 hover:bg-neutral-700 rounded-lg border border-white/10 transition-all active:scale-95"
           >
             <RotateCcw className="w-6 h-6" />
           </button>
         </div>
       </header>
 
-      {/* Main Game Area */}
-      <main className="flex-1 relative flex flex-col items-center justify-between py-6 px-4 max-w-6xl mx-auto w-full z-0">
-        
-        {/* AI Hand (Tom) */}
-        <div className="w-full flex flex-col items-center gap-2">
-          <div className="flex items-center gap-3 px-6 py-2 bg-slate-200 rounded-full border-4 border-slate-300 shadow-sm mb-2">
-            <Cat className="w-6 h-6 text-slate-600" />
-            <span className="font-black text-slate-700">汤姆猫 ({gameState.aiHand.length})</span>
-          </div>
-          <div className="flex -space-x-10 sm:-space-x-14 overflow-visible">
-            {gameState.aiHand.map((card) => (
-              <motion.div key={card.id} className="relative w-16 h-24 sm:w-24 sm:h-36 rounded-xl bg-slate-400 border-4 border-slate-500 shadow-md flex items-center justify-center">
-                <Cat className="w-8 h-8 text-slate-300/50" />
-              </motion.div>
-            ))}
-          </div>
+      {state.mode === 'time' && (
+        <div className="w-full h-2 bg-neutral-900 relative z-20">
+          <motion.div 
+            initial={{ width: '100%' }}
+            animate={{ width: `${(state.timeLeft / TIME_LIMIT) * 100}%` }}
+            className={`h-full transition-colors duration-1000 ${state.timeLeft <= 3 ? 'bg-red-600 shadow-[0_0_15px_rgba(220,38,38,0.8)]' : 'bg-yellow-500'}`}
+          />
         </div>
+      )}
 
-        {/* Center Table */}
-        <div className="flex flex-col sm:flex-row items-center gap-10 sm:gap-24 my-6">
-          {/* Draw Pile */}
-          <div className="flex flex-col items-center gap-3">
-            <div className="px-3 py-1 bg-orange-200 rounded-lg text-[10px] font-black text-orange-700 uppercase">厨房冰箱</div>
-            <div className="relative">
-              {gameState.deck.length > 0 ? (
-                <Card 
-                  card={gameState.deck[0]} 
-                  isFaceDown 
-                  onClick={() => gameState.currentTurn === 'player' && drawCard(true)}
-                  isPlayable={gameState.currentTurn === 'player' && gameState.playerHand.filter(isCardPlayable).length === 0}
-                  className="hover:rotate-2"
+      <main className="flex-1 relative flex items-center justify-center p-4 overflow-hidden bg-[url('https://www.transparenttextures.com/patterns/asphalt.png')]">
+        <div className="w-full max-w-md aspect-[6/10] relative bg-neutral-900/80 rounded-xl border-8 border-neutral-800 shadow-2xl overflow-hidden">
+          {/* Track Lines */}
+          <div className="absolute inset-0 flex justify-center opacity-20 pointer-events-none">
+            <div className="w-1 h-full bg-white border-x-4 border-dashed border-white/50" />
+          </div>
+
+          <div className="absolute top-[10%] left-0 right-0 h-2 bg-red-600/50 z-10 flex items-center justify-center">
+            <span className="bg-red-600 text-[10px] font-black px-3 py-0.5 rounded-full text-white uppercase italic tracking-tighter">Engine Overheat Line</span>
+          </div>
+
+          <div className="absolute inset-0">
+            <AnimatePresence>
+              {state.grid.map(block => (
+                <NumberBlock 
+                  key={block.id}
+                  block={block}
+                  isSelected={state.selectedIds.includes(block.id)}
+                  onClick={() => handleBlockClick(block.id)}
+                  isGameOver={state.status === 'gameover'}
+                  isError={isError}
                 />
-              ) : (
-                <div className="w-16 h-24 sm:w-24 sm:h-36 rounded-xl border-4 border-dashed border-orange-200 flex items-center justify-center">
-                  <Utensils className="w-8 h-8 text-orange-200" />
-                </div>
-              )}
-              <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-orange-500 text-white px-2 py-0.5 rounded-full text-xs font-black border-2 border-orange-700">
-                {gameState.deck.length}
+              ))}
+            </AnimatePresence>
+          </div>
+        </div>
+
+        <AnimatePresence>
+          {showScorePopup && (
+            <motion.div
+              initial={{ y: 0, opacity: 0, scale: 0.5 }}
+              animate={{ y: -150, opacity: 1, scale: 1.5 }}
+              exit={{ opacity: 0 }}
+              className="fixed z-40 pointer-events-none text-5xl font-black italic text-red-500 drop-shadow-[0_4px_10px_rgba(0,0,0,0.8)]"
+            >
+              NITRO +{lastScoreGain}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {state.selectedIds.length > 0 && (
+            <motion.div 
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.8, opacity: 0 }}
+              className={`fixed bottom-32 left-1/2 -translate-x-1/2 px-8 py-4 rounded-xl shadow-2xl border-4 z-30 flex items-center gap-4 transition-all ${isError ? 'bg-red-900 border-red-500 scale-110' : 'bg-neutral-900 border-red-600'}`}
+            >
+              <div className="flex flex-col">
+                <span className="text-neutral-500 font-black uppercase text-[10px] tracking-widest">Current RPM</span>
+                <span className={`text-3xl font-black italic ${currentSum > state.target ? 'text-red-500 animate-pulse' : 'text-white'}`}>{currentSum}</span>
               </div>
-            </div>
-          </div>
-
-          {/* Discard Pile */}
-          <div className="flex flex-col items-center gap-3">
-            <div className="px-3 py-1 bg-rose-200 rounded-lg text-[10px] font-black text-rose-700 uppercase">餐桌中心</div>
-            <div className="relative w-16 h-24 sm:w-24 sm:h-36">
-              {/* Show the second to last card as a base to prevent flickering */}
-              {gameState.discardPile.length > 1 && (
-                <div className="absolute inset-0">
-                  <Card 
-                    card={gameState.discardPile[gameState.discardPile.length - 2]} 
-                    disableInitialAnimation 
-                    className="shadow-none opacity-50"
-                  />
-                </div>
-              )}
-              
-              <AnimatePresence mode="wait">
-                {gameState.discardPile.slice(-1).map((card) => (
-                  <Card 
-                    key={card.id} 
-                    card={card} 
-                    disableInitialAnimation
-                    className="shadow-2xl rotate-1" 
-                  />
-                ))}
-              </AnimatePresence>
-              
-              {/* Active Suit Indicator */}
-              {gameState.activeSuit && (
-                <motion.div 
-                  initial={{ scale: 0, rotate: -45 }}
-                  animate={{ scale: 1, rotate: 0 }}
-                  className="absolute -top-6 -right-6 w-14 h-14 bg-yellow-400 rounded-2xl shadow-xl border-4 border-orange-600 flex items-center justify-center p-3 z-10"
-                >
-                  {getSuitIcon(gameState.activeSuit)}
-                </motion.div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Player Hand (Jerry) */}
-        <div className="w-full flex flex-col items-center gap-4">
-          <div className={`flex items-center gap-3 px-6 py-2 rounded-full border-4 shadow-sm transition-all ${gameState.currentTurn === 'player' ? 'bg-orange-400 border-orange-600 scale-110' : 'bg-orange-100 border-orange-200'}`}>
-            <Mouse className={`w-6 h-6 ${gameState.currentTurn === 'player' ? 'text-white' : 'text-orange-400'}`} />
-            <span className={`font-black ${gameState.currentTurn === 'player' ? 'text-white' : 'text-orange-900'}`}>杰瑞鼠 ({gameState.playerHand.length})</span>
-          </div>
-          
-          <div className="flex justify-center items-end h-48 sm:h-64 w-full relative px-12">
-            {gameState.playerHand.map((card, index) => {
-              const total = gameState.playerHand.length;
-              const angleStep = total > 1 ? 40 / (total - 1) : 0;
-              const rotation = (index * angleStep) - 20;
-              const xOffset = (index - (total - 1) / 2) * (total > 8 ? 30 : 50);
-              
-              return (
-                <div 
-                  key={card.id} 
-                  className="absolute transition-all duration-300"
-                  style={{ 
-                    transform: `translateX(${xOffset}px)`,
-                    zIndex: index
-                  }}
-                >
-                  <Card 
-                    card={card} 
-                    isPlayable={gameState.currentTurn === 'player' && isCardPlayable(card)}
-                    onClick={() => gameState.currentTurn === 'player' && isCardPlayable(card) && playCard(card, true)}
-                    rotation={rotation}
-                    yOffset={Math.abs(rotation) * 0.5}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        </div>
+              <div className="h-8 w-1 bg-neutral-700" />
+              <div className="flex flex-col">
+                <span className="text-neutral-500 font-black uppercase text-[10px] tracking-widest">Limit</span>
+                <span className="text-xl font-black text-red-500/50 italic">{state.target}</span>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
 
-      {/* Status Bar */}
-      <footer className="p-6 bg-white border-t-8 border-orange-200 flex items-center justify-center z-10">
-        <div className="bg-orange-50 px-8 py-3 rounded-2xl border-4 border-orange-100 shadow-inner w-full max-w-2xl">
-          <p className={`text-center text-lg font-black italic tracking-tight ${gameState.currentTurn === 'player' ? 'text-orange-600' : 'text-slate-500'}`}>
-            {message}
-          </p>
+      <footer className="p-6 flex justify-center gap-4 bg-neutral-900 border-t-4 border-neutral-800">
+        <div className="flex items-center gap-3 text-neutral-400 text-xs font-black uppercase tracking-widest italic">
+          <Flame className={`w-5 h-5 ${state.selectedIds.length >= 4 ? 'text-red-500 animate-pulse' : 'text-neutral-700'}`} />
+          <span>{state.selectedIds.length >= 4 ? 'TURBO BOOST ACTIVE!' : `MATCH ${state.target} RPM TO SHIFT`}</span>
         </div>
       </footer>
 
-      {/* Suit Selection Modal */}
       <AnimatePresence>
-        {gameState.isSuitSelecting && (
+        {state.status === 'gameover' && (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-orange-900/40 backdrop-blur-md p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-md p-6"
           >
             <motion.div 
-              initial={{ scale: 0.9, rotate: -2 }}
-              animate={{ scale: 1, rotate: 0 }}
-              className="bg-white border-8 border-orange-500 p-10 rounded-[3rem] shadow-2xl max-w-md w-full text-center"
+              initial={{ x: 100, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              className="bg-neutral-900 border-8 border-red-600 p-12 rounded-xl shadow-[0_0_100px_rgba(220,38,38,0.3)] max-w-md w-full text-center relative"
             >
-              <div className="flex justify-center mb-6">
-                <div className="bg-yellow-400 p-4 rounded-3xl border-4 border-orange-600 rotate-3">
-                  <Pizza className="w-12 h-12 text-orange-700" />
-                </div>
+              <div className="mb-8 inline-flex p-6 bg-red-600/20 rounded-full border-4 border-red-600">
+                <AlertCircle className="w-16 h-16 text-red-600" />
               </div>
-              <h2 className="text-3xl font-black text-orange-900 mb-8 italic">杰瑞，快选个新口味！</h2>
-              <div className="grid grid-cols-2 gap-6">
-                {SUITS.map(suit => (
-                  <button
-                    key={suit}
-                    onClick={() => selectSuit(suit)}
-                    className="flex flex-col items-center gap-3 p-6 bg-orange-50 hover:bg-orange-100 border-4 border-orange-100 hover:border-orange-300 rounded-[2rem] transition-all group active:scale-95"
-                  >
-                    <div className="w-14 h-14 group-hover:scale-125 transition-transform">
-                      {getSuitIcon(suit)}
-                    </div>
-                    <span className="text-xs font-black uppercase tracking-widest text-orange-700">
-                      {suit === Suit.HEARTS ? '红心' : suit === Suit.DIAMONDS ? '方块' : suit === Suit.CLUBS ? '梅花' : '黑桃'}
-                    </span>
-                  </button>
-                ))}
+              <h2 className="text-6xl font-black mb-2 tracking-tighter italic text-white">赛车报废</h2>
+              <p className="text-red-500 font-black mb-10 uppercase tracking-widest text-sm italic">引擎过热，比赛结束</p>
+              <div className="bg-neutral-800 rounded-xl p-6 mb-10 border-2 border-neutral-700">
+                <div className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-1">Total Distance</div>
+                <div className="text-5xl font-black italic text-red-500">{state.score}m</div>
               </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Game Over Modal */}
-      <AnimatePresence>
-        {gameState.status !== 'playing' && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-orange-950/60 backdrop-blur-xl p-4"
-          >
-            <motion.div 
-              initial={{ scale: 0.5, rotate: 15 }}
-              animate={{ scale: 1, rotate: 0 }}
-              className="bg-white border-[12px] border-orange-500 p-12 rounded-[4rem] shadow-2xl max-w-md w-full text-center relative"
-            >
-              <div className="mb-8 inline-flex p-6 bg-yellow-400 rounded-[2rem] border-4 border-orange-600 -rotate-6 shadow-lg">
-                <Trophy className="w-20 h-20 text-orange-700" />
+              <div className="flex flex-col gap-4">
+                <button
+                  onClick={() => initGame(state.mode)}
+                  className="w-full py-5 bg-red-600 hover:bg-red-500 text-white font-black rounded-lg transition-all flex items-center justify-center gap-3 text-2xl italic shadow-xl active:scale-95"
+                >
+                  <RotateCcw className="w-6 h-6" />
+                  重新发车
+                </button>
+                <button
+                  onClick={() => setState(prev => ({ ...prev, status: 'menu' }))}
+                  className="w-full py-5 bg-neutral-800 hover:bg-neutral-700 text-white font-black rounded-lg transition-all text-xl italic active:scale-95"
+                >
+                  回维修区
+                </button>
               </div>
-              
-              <h2 className="text-5xl font-black mb-4 tracking-tighter text-orange-900 italic">
-                {gameState.status === 'player_win' ? '杰瑞赢了！' : '汤姆赢了！'}
-              </h2>
-              <p className="text-orange-600 font-bold mb-10 text-xl">
-                {gameState.status === 'player_win' 
-                  ? '汤姆猫又被耍得团团转！' 
-                  : '杰瑞鼠这次没跑掉。'}
-              </p>
-              
-              <button
-                onClick={() => initGame()}
-                className="w-full py-6 px-8 bg-orange-500 hover:bg-orange-600 text-white font-black rounded-3xl transition-all flex items-center justify-center gap-3 text-2xl shadow-xl border-b-8 border-orange-800 active:border-b-0 active:translate-y-2"
-              >
-                <RotateCcw className="w-8 h-8" />
-                再来一局！
-              </button>
             </motion.div>
           </motion.div>
         )}
