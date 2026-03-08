@@ -1,47 +1,21 @@
-export enum Suit {
-  HEARTS = 'hearts',
-  DIAMONDS = 'diamonds',
-  CLUBS = 'clubs',
-  SPADES = 'spades',
-}
+export type GameMode = 'classic' | 'time';
+export type GameStatus = 'menu' | 'playing' | 'gameover';
 
-export enum Rank {
-  TWO = '2',
-  THREE = '3',
-  FOUR = '4',
-  FIVE = '5',
-  SIX = '6',
-  SEVEN = '7',
-  EIGHT = '8',
-  NINE = '9',
-  TEN = '10',
-  JACK = 'J',
-  QUEEN = 'Q',
-  KING = 'K',
-  ACE = 'A',
-}
-
-export interface CardData {
+export interface Block {
   id: string;
-  suit: Suit;
-  rank: Rank;
+  value: number;
+  row: number;
+  col: number;
+  color: string;
 }
-
-export type GameStatus = 'playing' | 'player_win' | 'ai_win';
-export type GameView = 'menu' | 'playing';
 
 export interface GameState {
-  deck: CardData[];
-  playerHand: CardData[];
-  aiHand: CardData[];
-  discardPile: CardData[];
-  currentTurn: 'player' | 'ai';
+  grid: Block[];
+  target: number;
+  selectedIds: string[];
+  score: number;
+  mode: GameMode;
   status: GameStatus;
-  view: GameView;
-  activeSuit: Suit | null;
-  isSuitSelecting: boolean;
-  scores: {
-    player: number;
-    ai: number;
-  };
+  timeLeft: number;
+  level: number;
 }
